@@ -189,51 +189,74 @@ const IssueCertificate = () => {
           {result.type === 'success' && result.data ? (
             <>
               <h3>✅ Certificate Issued Successfully!</h3>
-              <div className="certificate">
-                <div className="certificate-details">
-                  <div>
-                    <strong>Student:</strong> {result.data.certificate.student_name}
+              {result.data.certificate && (
+                <div className="certificate">
+                  <div className="certificate-details">
+                    <div>
+                      <strong>Student:</strong> {result.data.certificate.student_name || 'N/A'}
+                    </div>
+                    <div>
+                      <strong>Student ID:</strong> {result.data.certificate.student_id || 'N/A'}
+                    </div>
+                    <div>
+                      <strong>Course:</strong> {result.data.certificate.course_name || 'N/A'}
+                    </div>
+                    <div>
+                      <strong>Grade:</strong> {result.data.certificate.grade || 'N/A'}
+                    </div>
+                    <div>
+                      <strong>Issuer:</strong> {result.data.certificate.issuer_name || 'N/A'}
+                    </div>
+                    <div>
+                      <strong>Duration:</strong> {result.data.certificate.course_duration || 'N/A'}
+                    </div>
                   </div>
-                  <div>
-                    <strong>Student ID:</strong> {result.data.certificate.student_id}
-                  </div>
-                  <div>
-                    <strong>Course:</strong> {result.data.certificate.course_name}
-                  </div>
-                  <div>
-                    <strong>Grade:</strong> {result.data.certificate.grade}
-                  </div>
-                  <div>
-                    <strong>Issuer:</strong> {result.data.certificate.issuer_name}
-                  </div>
-                  <div>
-                    <strong>Duration:</strong> {result.data.certificate.course_duration}
+                  <div className="certificate-id">
+                    <strong>Certificate ID:</strong>{' '}
+                    {result.data.certificate.certificate_id || result.data.certificate_id || 'N/A'}
                   </div>
                 </div>
-                <div className="certificate-id">
-                  <strong>Certificate ID:</strong>{' '}
-                  {result.data.certificate.certificate_id}
+              )}
+              {!result.data.certificate && result.data.certificate_id && (
+                <div className="certificate">
+                  <div className="certificate-id">
+                    <strong>Certificate ID:</strong> {result.data.certificate_id}
+                  </div>
                 </div>
-              </div>
-              <p>
-                <strong>Blockchain Info:</strong> Block{' '}
-                {result.data.blockchain_info.block_index} | Hash:{' '}
-                {result.data.blockchain_info.block_hash.substring(0, 20)}...
-                {result.data.blockchain_info.genesis_created && (
-                  <span style={{ display: 'block', marginTop: '5px', fontSize: '0.9em', color: '#666' }}>
-                    ℹ️ Note: Genesis block (Block 0) was created automatically. This is normal for the first certificate.
-                  </span>
-                )}
-              </p>
-              {result.data.signature && (
-                <p>
-                  <strong>Signature:</strong>{' '}
-                  {result.data.signature.signed ? (
-                    <span>✅ Digitally Signed</span>
-                  ) : (
-                    <span>❌ Not Signed</span>
+              )}
+              {result.data.blockchain_info && (
+                <div style={{ marginTop: '15px', padding: '10px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
+                  <strong>Blockchain Info:</strong>
+                  {result.data.blockchain_info.block_number !== undefined && (
+                    <div>
+                      <strong>Block Number:</strong> {result.data.blockchain_info.block_number}
+                    </div>
                   )}
-                </p>
+                  {result.data.blockchain_info.transaction_hash && (
+                    <div>
+                      <strong>Transaction Hash:</strong>{' '}
+                      <code style={{ fontSize: '0.9em' }}>
+                        {result.data.blockchain_info.transaction_hash.substring(0, 20)}...
+                        {result.data.blockchain_info.transaction_hash.substring(result.data.blockchain_info.transaction_hash.length - 10)}
+                      </code>
+                    </div>
+                  )}
+                  {result.data.blockchain_info.network && (
+                    <div>
+                      <strong>Network:</strong> {result.data.blockchain_info.network}
+                    </div>
+                  )}
+                  {result.data.blockchain_info.gas_used && (
+                    <div>
+                      <strong>Gas Used:</strong> {result.data.blockchain_info.gas_used.toString()}
+                    </div>
+                  )}
+                  {result.data.note && (
+                    <div style={{ marginTop: '10px', padding: '8px', backgroundColor: '#e7f3ff', borderRadius: '4px', fontSize: '0.9em' }}>
+                      ℹ️ {result.data.note}
+                    </div>
+                  )}
+                </div>
               )}
             </>
           ) : (

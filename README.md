@@ -1,216 +1,245 @@
 # 🎓 Certificate Validation System
 
-A blockchain-based system for issuing, storing, and verifying academic certificates with cryptographic security and instant verification.
-
-## 🚀 Features
-
-- **Certificate Issuance** - Educational institutions can issue digital certificates
-- **Instant Verification** - Employers can verify certificates without contacting the issuer
-- **Tamper-Proof Storage** - Certificates are stored on an immutable blockchain
-- **Student Portfolio** - Students can view all their certificates
-- **Cryptographic Security** - SHA-256 hashing ensures data integrity
-- **Web Interface** - Clean, modern UI for all stakeholders
-
-## 🏗️ Architecture
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │    Backend      │    │   Blockchain    │
-│   (HTML/CSS/JS) │◄──►│   (FastAPI)     │◄──►│   (Custom)      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
-
-## 📁 Project Structure
-
-```
-blockchain/
-├── backend/                 # FastAPI backend
-│   ├── app/
-│   │   ├── models/         # Data models (Block, Certificate, Blockchain)
-│   │   ├── api/           # API routes
-│   │   ├── utils/         # Utility functions
-│   │   └── main.py        # FastAPI application
-│   ├── requirements.txt   # Python dependencies
-│   └── README.md         # Backend documentation
-├── frontend/              # Web frontend
-│   ├── index.html        # Main HTML file
-│   ├── css/
-│   │   └── style.css     # Styling
-│   └── js/
-│       └── app.js        # JavaScript functionality
-├── docs/
-│   └── API.md           # API documentation
-└── README.md            # This file
-```
-
-## 🛠️ Installation & Setup
-
-### Prerequisites
-- Python 3.8+
-- Modern web browser
-
-### Backend Setup
-
-1. **Navigate to backend directory:**
-   ```bash
-   cd backend
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Run the backend server:**
-   ```bash
-   # Option 1: Using the run script (recommended)
-   python run.py
-   
-   # Option 2: Using uvicorn directly
-   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-   
-   # Option 3: Using python module (legacy)
-   python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-   ```
-
-   The API will be available at `http://localhost:8000`
-
-### Frontend Setup
-
-1. **Open the frontend:**
-   - Navigate to the `frontend` directory
-   - Open `index.html` in your web browser
-   - Or serve it using a local server:
-     ```bash
-     cd frontend
-     python -m http.server 3000
-     ```
-     Then visit `http://localhost:3000`
-
-## 🎯 How to Use
-
-### 1. Issue a Certificate
-- Go to the "Issue Certificate" tab
-- Fill in student and course details
-- Click "Issue Certificate"
-- Copy the generated Certificate ID
-
-### 2. Verify a Certificate
-- Go to the "Verify Certificate" tab
-- Enter the Certificate ID
-- Click "Verify Certificate"
-- View the verification result
-
-### 3. View Student Portfolio
-- Go to the "Student Portfolio" tab
-- Enter a Student ID
-- View all certificates for that student
-
-### 4. Blockchain Information
-- Go to the "Blockchain Info" tab
-- View blockchain statistics
-- Validate blockchain integrity
-- See all certificates in the system
-
-## 🔧 API Endpoints
-
-### Certificates
-- `POST /certificates/issue` - Issue a new certificate
-- `POST /certificates/verify` - Verify a certificate
-- `GET /certificates/student/{student_id}` - Get student certificates
-- `GET /certificates/issuer/{issuer_id}` - Get issuer certificates
-- `POST /certificates/revoke` - Revoke a certificate
-- `GET /certificates/all` - Get all certificates
-
-### Blockchain
-- `GET /blockchain/info` - Get blockchain statistics
-- `GET /blockchain/validate` - Validate blockchain integrity
-- `GET /blockchain/blocks` - Get all blocks
-- `GET /blockchain/latest-block` - Get latest block
-
-## 🔒 Security Features
-
-- **Cryptographic Hashing** - SHA-256 for data integrity
-- **Immutable Records** - Once added, certificates cannot be modified
-- **Blockchain Validation** - Continuous integrity checking
-- **Unique Certificate IDs** - Generated using student data + timestamp
-
-## 🎨 Frontend Features
-
-- **Responsive Design** - Works on desktop and mobile
-- **Modern UI** - Clean, professional interface
-- **Real-time Feedback** - Loading states and success/error messages
-- **Tab Navigation** - Easy switching between functions
-- **Certificate Display** - Formatted certificate information
-
-## 🧪 Testing
-
-### Manual Testing
-1. Issue a certificate
-2. Verify the certificate using its ID
-3. View student portfolio
-4. Check blockchain information
-
-### API Testing
-Use the Swagger UI at `http://localhost:8000/docs` to test API endpoints directly.
-
-## 🚀 Deployment
-
-### Development
-- Backend: `cd backend && python run.py` or `uvicorn app.main:app --reload`
-- Frontend: Open `index.html` in browser
-
-### Production
-- Use a production WSGI server like Gunicorn
-- Serve frontend through a web server like Nginx
-- Implement proper authentication and rate limiting
-- Use a production database
-
-## 🔮 Future Enhancements
-
-- **Mobile App** - React Native or Flutter app
-- **QR Code Integration** - Generate and scan QR codes
-- **Digital Signatures** - RSA signatures for additional security
-- **Batch Processing** - Issue multiple certificates at once
-- **Email Notifications** - Notify students when certificates are issued
-- **Advanced Analytics** - Certificate statistics and reporting
-- **Multi-language Support** - Internationalization
-- **Integration APIs** - Connect with existing systems
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## 📄 License
-
-This project is open source and available under the MIT License.
-
-## 🆘 Support
-
-For issues and questions:
-1. Check the API documentation in `docs/API.md`
-2. Review the backend README in `backend/README.md`
-3. Open an issue on GitHub
-
-## 🎉 Demo
-
-Try the system with these sample data:
-
-**Issue Certificate:**
-- Student Name: John Doe
-- Student ID: STU001
-- Course Name: Computer Science
-- Grade: A+
-- Issuer Name: MIT
-- Issuer ID: MIT001
-
-**Verify Certificate:**
-- Use the Certificate ID generated from the issuance
+A blockchain-based platform for issuing, storing, and verifying academic certificates using **Ethereum blockchain**. Certificates are stored on Ethereum smart contracts, making them **immutable, tamper-proof, and verifiable**.
 
 ---
 
-**Built with ❤️ for the 24-hour hackathon!**
+## 📖 About This Project
+
+This system allows educational institutions to issue digital certificates on the Ethereum blockchain. Students can verify their certificates instantly without contacting the issuer, and all certificate data is stored immutably on the blockchain.
+
+### Key Features
+- ✅ Issue certificates on Ethereum blockchain
+- ✅ Verify certificates instantly
+- ✅ View student portfolio with all courses
+- ✅ Revoke certificates if needed
+- ✅ Privacy-preserving (only PII hashes on blockchain)
+- ✅ Tamper-proof storage
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+Before you begin, ensure you have the following installed:
+- **Python 3.8+** ([Download](https://www.python.org/downloads/))
+- **Node.js 16+** and **npm** ([Download](https://nodejs.org/))
+- **Git** ([Download](https://git-scm.com/downloads))
+
+### Step 1: Clone the Repository
+
+```bash
+git clone <your-repository-url>
+cd certificate-validation-system
+```
+
+### Step 2: Install Dependencies
+
+Install dependencies for all three parts of the project:
+
+**Backend (Python):**
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+**Frontend (Node.js):**
+```bash
+cd ../frontend
+npm install
+```
+
+**Smart Contracts (Node.js):**
+```bash
+cd ../contracts
+npm install
+```
+
+### Step 3: Configure Environment Variables
+
+**Backend Configuration:**
+
+You can use the helper script to create the `.env` file:
+```bash
+cd backend
+python create_env.py
+```
+
+Or manually create `backend/.env`:
+```env
+DATABASE_URL=sqlite:///./certificates.db
+SECRET_KEY=your-secret-key-here-change-this
+ETHEREUM_NETWORK=hardhat
+CONTRACT_ADDRESS=
+ETHEREUM_PRIVATE_KEY=
+HARDHAT_RPC_URL=http://127.0.0.1:8545
+```
+
+**Frontend Configuration:**
+
+Create `frontend/.env`:
+```env
+VITE_API_URL=http://localhost:8000
+VITE_USE_ETHEREUM=true
+VITE_ETHEREUM_CONTRACT_ADDRESS=
+VITE_ETHEREUM_NETWORK=hardhat
+```
+
+> **Note:** Leave `CONTRACT_ADDRESS` and `VITE_ETHEREUM_CONTRACT_ADDRESS` empty for now. You'll fill them in after deploying the contract.
+
+### Step 4: Start the Local Blockchain (Hardhat)
+
+Open **Terminal 1** and start the Hardhat local blockchain:
+```bash
+cd contracts
+npx hardhat node
+```
+
+Keep this terminal running! You should see a list of accounts with private keys and ETH balances.
+
+### Step 5: Deploy the Smart Contract
+
+Open **Terminal 2** and deploy the contract:
+```bash
+cd contracts
+npx hardhat run scripts/deploy.js --network localhost
+```
+
+You'll see output like:
+```
+CertificateVerifier deployed to: 0x5FbDB2315678afecb367f032d93F642f64180aa3
+```
+
+**Copy the contract address** and update:
+1. `backend/.env` - Set `CONTRACT_ADDRESS=0x...`
+2. `frontend/.env` - Set `VITE_ETHEREUM_CONTRACT_ADDRESS=0x...`
+
+### Step 6: Initialize the Database
+
+The database will be automatically created when you start the backend, but you can also initialize it manually:
+```bash
+cd backend
+python -m app.init_db
+```
+
+### Step 7: Start the Backend Server
+
+Open **Terminal 3** and start the FastAPI backend:
+```bash
+cd backend
+python run.py
+```
+
+Or using uvicorn directly:
+```bash
+cd backend
+python -m uvicorn app.main:app --reload
+```
+
+The backend will be available at: http://localhost:8000
+
+### Step 8: Start the Frontend
+
+Open **Terminal 4** and start the React frontend:
+```bash
+cd frontend
+npm run dev
+```
+
+The frontend will be available at: http://localhost:5173 (or the port shown in the terminal)
+
+### Step 9: Access the Application
+
+- **Frontend UI:** http://localhost:5173
+- **Backend API:** http://localhost:8000
+- **API Documentation:** http://localhost:8000/docs (Swagger UI)
+- **Alternative API Docs:** http://localhost:8000/redoc
+
+---
+
+## 🔧 Troubleshooting
+
+### Database Issues
+- If you get database errors, delete `backend/certificates.db` and restart the backend (it will recreate the database)
+- Or manually initialize: `cd backend && python -m app.init_db`
+
+### Port Already in Use
+- Backend (8000): Change port in `backend/run.py` or use: `uvicorn app.main:app --port 8001`
+- Frontend (5173): Vite will automatically use the next available port
+- Hardhat (8545): Stop any other Hardhat nodes or change the port in `contracts/hardhat.config.js`
+
+### Contract Deployment Issues
+- Make sure Hardhat node is running before deploying
+- Check that `ETHEREUM_PRIVATE_KEY` in `backend/.env` matches one of the Hardhat accounts
+- Verify the contract address is correctly set in both `.env` files
+
+### Frontend Can't Connect to Backend
+- Ensure backend is running on port 8000
+- Check `VITE_API_URL` in `frontend/.env`
+- Check browser console for CORS errors
+
+### Module Not Found Errors
+- Make sure you've installed all dependencies in all three directories
+- For Python: `pip install -r requirements.txt` in `backend/`
+- For Node.js: `npm install` in both `frontend/` and `contracts/`
+
+### Environment Variables Not Loading
+- Ensure `.env` files are in the correct directories (`backend/.env` and `frontend/.env`)
+- Restart the servers after changing `.env` files
+- Check for typos in variable names
+
+---
+
+## ⚡ Quick Reference
+
+**Start all services (4 terminals required):**
+
+```bash
+# Terminal 1: Start Hardhat blockchain
+cd contracts && npx hardhat node
+
+# Terminal 2: Deploy contract (after Terminal 1 is running)
+cd contracts && npx hardhat run scripts/deploy.js --network localhost
+# Copy contract address to backend/.env and frontend/.env
+
+# Terminal 3: Start backend
+cd backend && python run.py
+
+# Terminal 4: Start frontend
+cd frontend && npm run dev
+```
+
+**Default URLs:**
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
+
+---
+
+## 📚 Documentation
+
+For detailed information about:
+- How the system works
+- Complete setup guide
+- All features and implementation details
+
+See **[PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)**
+
+---
+
+## 🛠️ Technology Stack
+
+- **Backend:** FastAPI, Python, SQLite, Web3.py
+- **Frontend:** React, Vite, ethers.js
+- **Blockchain:** Solidity, Hardhat, Ethereum
+
+---
+
+## 📄 License
+
+MIT License
+
+---
+
+**Built with ❤️ for secure certificate validation on Ethereum!**

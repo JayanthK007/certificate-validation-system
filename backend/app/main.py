@@ -18,41 +18,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
+from dotenv import load_dotenv
 
-# Import API routers
+load_dotenv()
+
 from .api import certificates, blockchain, auth
 
-# Import database initialization function
 from .database import init_db
 
-# ============================================================================
-# FastAPI Application Instance
-# ============================================================================
-
-# Create FastAPI application with metadata
 app = FastAPI(
     title="Certificate Validation System",
     description="A blockchain-based system for issuing and verifying academic certificates",
     version="1.0.0"
 )
 
-# ============================================================================
-# CORS Middleware Configuration
-# ============================================================================
-
-# Enable Cross-Origin Resource Sharing (CORS) for frontend communication
-# This allows the React frontend (running on different port) to make API requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins (e.g., ["https://yourdomain.com"])
-    allow_credentials=True,  # Allow cookies and authentication headers
-    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, PUT, DELETE, etc.)
-    allow_headers=["*"],  # Allow all headers (including Authorization)
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
-# ============================================================================
-# Application Startup Event
-# ============================================================================
 
 @app.on_event("startup")
 async def startup_event():
@@ -69,25 +55,11 @@ async def startup_event():
     """
     init_db()
 
-# ============================================================================
-# API Route Registration
-# ============================================================================
-
-# Register API routers - these handle different groups of endpoints
-# Each router is prefixed and tagged for organization in API docs
-
-# Authentication endpoints (login, register, logout, user info)
 app.include_router(auth.router)
 
-# Certificate management endpoints (issue, verify, revoke, query)
 app.include_router(certificates.router)
 
-# Blockchain information endpoints (info, validation, blocks)
 app.include_router(blockchain.router)
-
-# ============================================================================
-# Root Endpoint
-# ============================================================================
 
 @app.get("/")
 async def root():
@@ -100,17 +72,13 @@ async def root():
     return {
         "message": "Certificate Validation System API",
         "version": "1.0.0",
-        "docs": "/docs",  # Swagger UI documentation
+        "docs": "/docs",
         "endpoints": {
             "certificates": "/certificates",
             "blockchain": "/blockchain",
             "authentication": "/auth"
         }
     }
-
-# ============================================================================
-# Health Check Endpoint
-# ============================================================================
 
 @app.get("/health")
 async def health_check():
@@ -125,19 +93,6 @@ async def health_check():
     """
     return {"status": "healthy", "message": "API is running"}
 
-# ============================================================================
-# Development Notes
-# ============================================================================
-
-# Note: In production, serve React build files through a web server like Nginx
-# For development, React app runs on Vite dev server (port 3000)
-
-# ============================================================================
-# Application Entry Point (for direct execution)
-# ============================================================================
-
 if __name__ == "__main__":
-    # Run the application using uvicorn
-    # This is used when running: python -m app.main
     import uvicorn
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

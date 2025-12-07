@@ -19,25 +19,17 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from ..database import get_db
-from ..models.db_models import CertificateDB, InstitutionKey, CertificateSignature
-from ..services.blockchain_service import BlockchainService
+from ..models.db_models import CertificateDB, InstitutionKey, CertificateSignature, CertificateIndex
+from ..services.ethereum_helper import get_ethereum_service
 from ..utils.auth import get_current_institution, get_current_user
 from ..utils.ecdsa_utils import sign_data, verify_signature, create_certificate_hash_for_signing
-from ..utils.merkle_tree import hash_data
+import hashlib
 import hashlib
 import json
 import time
 from datetime import datetime
 
-# ============================================================================
-# API Router Setup
-# ============================================================================
-
 router = APIRouter(prefix="/certificates", tags=["certificates"])
-
-# ============================================================================
-# Pydantic Models for Request/Response Validation
-# ============================================================================
 
 class CertificateRequest(BaseModel):
     """
@@ -80,10 +72,6 @@ class RevocationRequest(BaseModel):
     certificate_id: str
     reason: str = None
 
-# ============================================================================
-# Privacy-Preserving Hash Function
-# ============================================================================
-
 def create_pii_hash(certificate_data: dict) -> str:
     """
     Create SHA-256 hash of PII (Personally Identifiable Information) data.
@@ -105,22 +93,15 @@ def create_pii_hash(certificate_data: dict) -> str:
     Note:
         Keys are sorted to ensure consistent hashing regardless of input order
     """
-    # Extract only PII fields
     pii_data = {
         'student_name': certificate_data.get('student_name'),
         'student_id': certificate_data.get('student_id'),
         'grade': certificate_data.get('grade')
     }
     
-    # Convert to JSON string with sorted keys for consistency
     pii_string = json.dumps(pii_data, sort_keys=True)
     
-    # Return SHA-256 hash
-    return hash_data(pii_string)
-
-# ============================================================================
-# Certificate Issuance Endpoint
-# ============================================================================
+    return hashlib.sha256(pii_string.encode('utf-8')).hexdigest()
 
 @router.post("/issue")
 async def issue_certificate(
@@ -166,10 +147,6 @@ async def issue_certificate(
         HTTPException: 400 for other errors
     """
     try:
-        # ================================================================
-        # Get Institution ECDSA Key Pair
-        # ================================================================
-        # Institutions need their key pair to sign certificates
         institution_key = db.query(InstitutionKey).filter(
             InstitutionKey.issuer_id == current_user.issuer_id
         ).first()
@@ -180,147 +157,77 @@ async def issue_certificate(
                 detail="Institution key not found. Please contact administrator."
             )
         
-        # ================================================================
-        # Generate Certificate Metadata
-        # ================================================================
         issue_date = datetime.now().strftime("%Y-%m-%d")
         timestamp = time.time()
         
-        # Generate unique certificate ID using SHA-256
-        # Format: hash(student_id + course_name + timestamp)
         cert_string = f"{cert_request.student_id}_{cert_request.course_name}_{timestamp}"
         certificate_id = hashlib.sha256(cert_string.encode()).hexdigest()[:16].upper()
         
-        # ================================================================
-        # Create Certificate in Private Database (with PII)
-        # ================================================================
-        # Full certificate data including PII is stored in private database
-        # This is NOT stored on blockchain for privacy compliance
-        certificate = CertificateDB(
-            certificate_id=certificate_id,
-            student_name=cert_request.student_name,  # PII
-            student_id=cert_request.student_id,
-            course_name=cert_request.course_name,
-            grade=cert_request.grade,  # PII
-            issuer_name=current_user.issuer_name or "Unknown",
-            issuer_id=current_user.issuer_id,
-            issuer_user_id=current_user.id,  # Link to issuing user
-            course_duration=cert_request.course_duration or "N/A",
-            issue_date=issue_date,
-            timestamp=timestamp,
-            status="active"
-        )
-        
-        db.add(certificate)
-        db.flush()  # Flush to get certificate.id
-        
-        # ================================================================
-        # Create PII Hash for Blockchain (Privacy Feature)
-        # ================================================================
-        # Only hash of PII is stored on blockchain, not the actual data
-        # This allows verification without exposing personal information
         pii_hash = create_pii_hash({
             'student_name': cert_request.student_name,
             'student_id': cert_request.student_id,
             'grade': cert_request.grade
         })
         
-        # ================================================================
-        # Prepare Data for Digital Signing
-        # ================================================================
-        # Create standardized data structure for signing
-        # Excludes signature fields and PII to avoid circular dependencies
-        signing_data = create_certificate_hash_for_signing({
-            'certificate_id': certificate_id,
-            'student_id': cert_request.student_id,
-            'course_name': cert_request.course_name,
-            'grade': cert_request.grade,
-            'issuer_id': current_user.issuer_id,
-            'issue_date': issue_date,
-            'timestamp': timestamp
-        })
+        ethereum_service = get_ethereum_service()
         
-        # ================================================================
-        # Sign Certificate with ECDSA
-        # ================================================================
-        # Digital signature proves certificate was issued by legitimate institution
-        signature = sign_data(institution_key.private_key_encrypted, signing_data)
-        
-        # ================================================================
-        # Store Digital Signature
-        # ================================================================
-        cert_signature = CertificateSignature(
+        result = ethereum_service.issue_certificate(
             certificate_id=certificate_id,
-            institution_key_id=institution_key.id,
-            signature=signature,  # Base64-encoded ECDSA signature
-            public_key=institution_key.public_key  # For verification
+            pii_hash=pii_hash,
+            course_name=cert_request.course_name,
+            issuer_id=current_user.issuer_id
         )
-        db.add(cert_signature)
         
-        # ================================================================
-        # Add Certificate to Blockchain (Hash Only, Not PII)
-        # ================================================================
-        # Blockchain service adds certificate hash to blockchain
-        # This does NOT commit - transaction is managed by this function
-        blockchain_service = BlockchainService(db)
-        result = blockchain_service.add_certificate_to_blockchain(certificate, pii_hash)
-        
-        # If blockchain addition failed, rollback everything
+        # If blockchain addition failed, return error
         if not result['success']:
-            db.rollback()
-            raise HTTPException(status_code=500, detail=result['message'])
+            raise HTTPException(status_code=500, detail=result.get('error', result.get('message', 'Failed to issue certificate on Ethereum')))
         
-        # ================================================================
-        # Commit Transaction
-        # ================================================================
-        # All changes (certificate, signature, blockchain entry) are committed atomically
-        # If any part fails, entire transaction is rolled back
+        # Store lightweight index entry (for querying by student_id/issuer_id)
+        # This does NOT store PII - only the mapping and course name
+        index_entry = CertificateIndex(
+            certificate_id=certificate_id,
+            student_id=cert_request.student_id,
+            issuer_id=current_user.issuer_id,
+            course_name=cert_request.course_name,
+            timestamp=timestamp,
+            status="active"
+        )
+        db.add(index_entry)
         db.commit()
-        db.refresh(certificate)  # Refresh to get database-generated fields
         
-        # ================================================================
-        # Return Success Response
-        # ================================================================
         return {
             "success": True,
-            "message": "Certificate issued successfully",
+            "message": "Certificate issued successfully on Ethereum blockchain",
             "certificate_id": certificate_id,
             "certificate": {
                 "certificate_id": certificate_id,
-                "student_name": certificate.student_name,
-                "student_id": certificate.student_id,
-                "course_name": certificate.course_name,
-                "grade": certificate.grade,
-                "issuer_name": certificate.issuer_name,
-                "issuer_id": certificate.issuer_id,
-                "course_duration": certificate.course_duration,
-                "issue_date": certificate.issue_date,
-                "timestamp": certificate.timestamp,
-                "status": certificate.status
+                "student_name": cert_request.student_name,
+                "student_id": cert_request.student_id,
+                "course_name": cert_request.course_name,
+                "grade": cert_request.grade,
+                "issuer_name": current_user.issuer_name or "Unknown",
+                "issuer_id": current_user.issuer_id,
+                "course_duration": cert_request.course_duration or "N/A",
+                "issue_date": issue_date,
+                "timestamp": timestamp,
+                "status": "active"
             },
-                    "blockchain_info": {
-                        "block_index": result['block_index'],
-                        "block_hash": result['block_hash'],
-                        "merkle_root": result.get('merkle_root'),
-                        "genesis_created": result.get('genesis_created', False)
-                    },
-            "signature": {
-                "signed": True,
-                "public_key": institution_key.public_key[:50] + "..."  # Truncated for display
-            }
+            "blockchain_info": {
+                "block_number": result.get('block_number'),
+                "transaction_hash": result.get('transaction_hash'),
+                "network": result.get('network'),
+                "contract_address": result.get('contract_address'),
+                "gas_used": result.get('gas_used'),
+                "blockchain_type": "ethereum"
+            },
+            "note": "Certificate stored on Ethereum blockchain only, not in database"
         }
     
     except HTTPException:
-        # Re-raise HTTP exceptions (already properly formatted)
         raise
     except Exception as e:
-        # Rollback on any other error
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-
-# ============================================================================
-# Certificate Verification Endpoint
-# ============================================================================
 
 @router.post("/verify")
 async def verify_certificate(
@@ -356,84 +263,51 @@ async def verify_certificate(
         HTTPException: 400 if an error occurs
     """
     try:
-        # ================================================================
-        # Verify Certificate in Blockchain
-        # ================================================================
-        blockchain_service = BlockchainService(db)
-        result = blockchain_service.verify_certificate(verification_request.certificate_id)
+        ethereum_service = get_ethereum_service()
+        result = ethereum_service.verify_certificate_without_pii(verification_request.certificate_id)
         
-        # If certificate not found, return early
         if not result['found']:
+            error_message = result.get('error', 'Certificate not found')
             return {
                 "verified": False,
                 "valid": False,
-                "message": "Certificate not found"
+                "message": error_message
             }
         
-        # ================================================================
-        # Verify ECDSA Digital Signature
-        # ================================================================
-        # Get certificate from database
-        certificate = db.query(CertificateDB).filter(
-            CertificateDB.certificate_id == verification_request.certificate_id
-        ).first()
+        cert_data = ethereum_service.get_certificate(verification_request.certificate_id)
         
-        # Safety check: If certificate not found in database (data inconsistency)
-        if not certificate:
-            return {
-                "verified": True,
-                "valid": False,
-                "message": "Certificate found in blockchain but missing from database"
-            }
+        certificate_info = {
+            'certificate_id': verification_request.certificate_id,
+            'student_name': None,
+            'student_id': None,
+            'course_name': cert_data.get('course_name'),
+            'grade': None,
+            'issuer_id': cert_data.get('issuer_id'),
+            'timestamp': cert_data.get('timestamp'),
+            'status': 'revoked' if cert_data.get('revoked') else 'active'
+        }
         
-        # Get signature record
-        signature_record = db.query(CertificateSignature).filter(
-            CertificateSignature.certificate_id == verification_request.certificate_id
-        ).first()
+        blockchain_proof = {
+            'valid': result.get('valid', False),
+            'issuer': result.get('issuer'),
+            'timestamp': result.get('timestamp'),
+            'revoked': result.get('revoked', False),
+            'blockchain': 'ethereum',
+            'network': result.get('network'),
+            'contract_address': result.get('contract_address')
+        }
         
-        # Verify signature if it exists
-        signature_valid = False
-        if signature_record:
-            # Recreate signing data (must match format used during signing)
-            signing_data = create_certificate_hash_for_signing({
-                'certificate_id': certificate.certificate_id,
-                'student_id': certificate.student_id,
-                'course_name': certificate.course_name,
-                'grade': certificate.grade,
-                'issuer_id': certificate.issuer_id,
-                'issue_date': certificate.issue_date,
-                'timestamp': certificate.timestamp
-            })
-            
-            # Verify signature using public key
-            signature_valid = verify_signature(
-                signature_record.public_key,
-                signing_data,
-                signature_record.signature
-            )
-        
-        # ================================================================
-        # Return Verification Result
-        # ================================================================
-        # Certificate is valid only if:
-        # 1. Found in blockchain
-        # 2. Merkle proof is valid (from blockchain_service)
-        # 3. Status is active
-        # 4. Digital signature is valid
         return {
             "verified": True,
-            "valid": result['valid'] and signature_valid,
-            "certificate": result['certificate'],
-            "blockchain_proof": result['blockchain_proof'],
-            "signature_verified": signature_valid
+            "valid": result.get('valid', False),
+            "certificate": certificate_info,
+            "blockchain_proof": blockchain_proof,
+            "signature_verified": None,
+            "note": "Certificate verified on Ethereum blockchain. PII (student name, ID, grade) is not stored on blockchain for privacy."
         }
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-# ============================================================================
-# Certificate Querying Endpoints
-# ============================================================================
 
 @router.get("/student/{student_id}")
 async def get_student_certificates(
@@ -462,12 +336,71 @@ async def get_student_certificates(
         HTTPException: 400 if an error occurs
     """
     try:
-        blockchain_service = BlockchainService(db)
-        certificates = blockchain_service.get_certificates_by_student(student_id)
+        index_entries = db.query(CertificateIndex).filter(
+            CertificateIndex.student_id == student_id,
+            CertificateIndex.status == "active"
+        ).all()
+        
+        if not index_entries:
+            return {
+                "student_id": student_id,
+                "certificates": [],
+                "count": 0,
+                "note": f"No certificates found for Student ID: {student_id}. Certificates are stored on Ethereum blockchain and must be verified individually by certificate ID."
+            }
+        
+        ethereum_service = get_ethereum_service()
+        certificates = []
+        
+        for index_entry in index_entries:
+            try:
+                cert_data = ethereum_service.get_certificate(index_entry.certificate_id)
+                if cert_data and (cert_data.get('exists') == True or cert_data.get('found') == True):
+                    certificates.append({
+                        "certificate_id": index_entry.certificate_id,
+                        "student_id": index_entry.student_id,
+                        "course_name": cert_data.get('course_name') or index_entry.course_name,
+                        "issuer_id": cert_data.get('issuer_id') or index_entry.issuer_id,
+                        "timestamp": cert_data.get('timestamp') or index_entry.timestamp,
+                        "status": "revoked" if cert_data.get('revoked') else index_entry.status,
+                        "revoked": cert_data.get('revoked', False),
+                        "revocation_reason": cert_data.get('revocation_reason'),
+                        "issuer_address": cert_data.get('issuer'),
+                        "blockchain_verified": True,
+                        "blockchain": cert_data.get('blockchain', 'ethereum'),
+                        "network": cert_data.get('network'),
+                        "contract_address": cert_data.get('contract_address'),
+                        "note": "Full certificate data stored on Ethereum blockchain. Use certificate ID to verify in 'Verify Certificate' tab."
+                    })
+                else:
+                    error_msg = cert_data.get('error', 'Unknown error') if cert_data else 'No response from Ethereum'
+                    certificates.append({
+                        "certificate_id": index_entry.certificate_id,
+                        "student_id": index_entry.student_id,
+                        "course_name": index_entry.course_name,
+                        "issuer_id": index_entry.issuer_id,
+                        "timestamp": index_entry.timestamp,
+                        "status": index_entry.status,
+                        "blockchain_verified": False,
+                        "note": f"Certificate exists in index but not found on Ethereum blockchain. {error_msg}"
+                    })
+            except Exception as e:
+                certificates.append({
+                    "certificate_id": index_entry.certificate_id,
+                    "student_id": index_entry.student_id,
+                    "course_name": index_entry.course_name,
+                    "issuer_id": index_entry.issuer_id,
+                    "timestamp": index_entry.timestamp,
+                    "status": index_entry.status,
+                    "blockchain_verified": False,
+                    "note": f"Certificate exists in index but could not be verified on Ethereum: {str(e)}"
+                })
+        
         return {
             "student_id": student_id,
             "certificates": certificates,
-            "count": len(certificates)
+            "count": len(certificates),
+            "note": f"Found {len(certificates)} certificate(s). Full certificate data is stored on Ethereum blockchain. Use certificate ID to verify in 'Verify Certificate' tab."
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -499,19 +432,14 @@ async def get_issuer_certificates(
         HTTPException: 400 if an error occurs
     """
     try:
-        blockchain_service = BlockchainService(db)
-        certificates = blockchain_service.get_certificates_by_issuer(issuer_id)
         return {
             "issuer_id": issuer_id,
-            "certificates": certificates,
-            "count": len(certificates)
+            "certificates": [],
+            "count": 0,
+            "note": "Ethereum blockchain doesn't support querying certificates by issuer_id. Please verify certificates individually by certificate_id."
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-# ============================================================================
-# Certificate Revocation Endpoint
-# ============================================================================
 
 @router.post("/revoke")
 async def revoke_certificate(
@@ -549,84 +477,134 @@ async def revoke_certificate(
         HTTPException: 400 for other errors
     """
     try:
-        # ================================================================
-        # Find Certificate
-        # ================================================================
-        certificate = db.query(CertificateDB).filter(
-            CertificateDB.certificate_id == revocation_request.certificate_id
-        ).first()
+        ethereum_service = get_ethereum_service()
+        cert_data = ethereum_service.get_certificate(revocation_request.certificate_id)
         
-        if not certificate:
-            raise HTTPException(status_code=404, detail="Certificate not found")
+        if not cert_data or cert_data.get('found') == False:
+            raise HTTPException(status_code=404, detail="Certificate not found on Ethereum blockchain")
         
-        # ================================================================
-        # Verify Permission to Revoke
-        # ================================================================
-        # Only the issuing institution or admin can revoke
-        # This prevents institutions from revoking other institutions' certificates
-        if current_user.role != "admin" and certificate.issuer_id != current_user.issuer_id:
-            raise HTTPException(
-                status_code=403,
-                detail="You can only revoke certificates issued by your institution"
-            )
+        if cert_data.get('revoked'):
+            raise HTTPException(status_code=400, detail="Certificate is already revoked")
         
-        # ================================================================
-        # Revoke Certificate
-        # ================================================================
-        blockchain_service = BlockchainService(db)
-        result = blockchain_service.revoke_certificate(
+        result = ethereum_service.revoke_certificate(
             revocation_request.certificate_id,
-            revocation_request.reason
+            revocation_request.reason or "Revoked by issuer"
         )
         
         if result['success']:
+            index_entry = db.query(CertificateIndex).filter(
+                CertificateIndex.certificate_id == revocation_request.certificate_id
+            ).first()
+            if index_entry:
+                index_entry.status = "revoked"
+                db.commit()
+            
             return {
                 "success": True,
-                "message": "Certificate revoked successfully",
+                "message": "Certificate revoked successfully on Ethereum blockchain",
                 "certificate_id": revocation_request.certificate_id,
-                "reason": revocation_request.reason
+                "reason": revocation_request.reason,
+                "transaction_hash": result.get('transaction_hash'),
+                "block_number": result.get('block_number')
             }
         else:
-            raise HTTPException(status_code=404, detail=result['message'])
+            raise HTTPException(status_code=500, detail=result.get('error', 'Failed to revoke certificate'))
     
     except HTTPException:
-        # Re-raise HTTP exceptions (already properly formatted)
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-# ============================================================================
-# All Certificates Endpoint (Demo/Development)
-# ============================================================================
-
 @router.get("/all")
 async def get_all_certificates(db: Session = Depends(get_db)):
     """
-    Get all certificates in the system (for demo/development purposes).
+    Get all certificates from the index with their Ethereum verification status.
     
-    This endpoint returns all certificates. Useful for development and testing.
-    In production, you might want to:
-    - Add pagination
-    - Require authentication
-    - Add filtering/sorting options
+    This endpoint returns all certificates from the database index and checks
+    their status on Ethereum blockchain. Useful for viewing all certificates
+    and their verification status.
     
     Args:
         db: Database session (injected by FastAPI)
     
     Returns:
         dict: All certificates with:
-            - certificates: List of all certificate dictionaries
+            - certificates: List of all certificate dictionaries with Ethereum status
             - count: Total number of certificates
+            - verified_count: Number of certificates verified on Ethereum
+            - not_verified_count: Number of certificates not found on Ethereum
     
     Raises:
         HTTPException: 400 if an error occurs
     """
     try:
-        blockchain_service = BlockchainService(db)
-        certificates = blockchain_service.get_all_certificates()
+        index_entries = db.query(CertificateIndex).all()
+        
+        if not index_entries:
+            return {
+                "certificates": [],
+                "count": 0,
+                "verified_count": 0,
+                "not_verified_count": 0,
+                "note": "No certificates found in the index. Certificates will be added when you issue them."
+            }
+        
+        certificates = []
+        verified_count = 0
+        not_verified_count = 0
+        
+        try:
+            ethereum_service = get_ethereum_service()
+            ethereum_connected = True
+        except Exception as e:
+            ethereum_connected = False
+            ethereum_error = str(e)
+        
+        for index_entry in index_entries:
+            cert_info = {
+                "certificate_id": index_entry.certificate_id,
+                "student_id": index_entry.student_id,
+                "course_name": index_entry.course_name,
+                "issuer_id": index_entry.issuer_id,
+                "timestamp": index_entry.timestamp,
+                "status": index_entry.status,
+                "created_at": index_entry.created_at.isoformat() if index_entry.created_at else None
+            }
+            
+            if ethereum_connected:
+                try:
+                    cert_data = ethereum_service.get_certificate(index_entry.certificate_id)
+                    if cert_data and (cert_data.get('exists') == True or cert_data.get('found') == True):
+                        cert_info["blockchain_verified"] = True
+                        cert_info["blockchain_course_name"] = cert_data.get('course_name')
+                        cert_info["blockchain_issuer_id"] = cert_data.get('issuer_id')
+                        cert_info["blockchain_timestamp"] = cert_data.get('timestamp')
+                        cert_info["blockchain_revoked"] = cert_data.get('revoked', False)
+                        cert_info["blockchain_revocation_reason"] = cert_data.get('revocation_reason')
+                        cert_info["blockchain_network"] = cert_data.get('network')
+                        verified_count += 1
+                    else:
+                        cert_info["blockchain_verified"] = False
+                        cert_info["blockchain_error"] = cert_data.get('error', 'Certificate not found') if cert_data else 'No response'
+                        not_verified_count += 1
+                except Exception as e:
+                    cert_info["blockchain_verified"] = False
+                    cert_info["blockchain_error"] = str(e)
+                    not_verified_count += 1
+            else:
+                cert_info["blockchain_verified"] = None
+                cert_info["blockchain_error"] = f"Ethereum not connected: {ethereum_error}"
+                not_verified_count += 1
+            
+            certificates.append(cert_info)
+        
         return {
             "certificates": certificates,
-            "count": len(certificates)
+            "count": len(certificates),
+            "verified_count": verified_count,
+            "not_verified_count": not_verified_count,
+            "ethereum_connected": ethereum_connected,
+            "note": f"Found {len(certificates)} certificate(s) in index. {verified_count} verified on Ethereum, {not_verified_count} not found or error."
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

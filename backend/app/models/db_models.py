@@ -6,13 +6,16 @@ The models represent the database schema for:
 - User accounts and authentication
 - Institution ECDSA keys
 - Certificates (with PII stored privately)
-- Blockchain blocks and entries
 - Certificate digital signatures
+
+Note: Certificates are stored on Ethereum blockchain. This database only stores
+      certificate metadata and PII for reference (not used for verification).
 
 Database Design:
 - PII (Personally Identifiable Information) is stored in CertificateDB table
-- Only hashes of PII are stored in BlockchainEntry (privacy feature)
-- Relationships link certificates to users, blocks, and signatures
+- Certificates are stored on Ethereum blockchain (not in this database)
+- This database is used for reference only (certificates are verified on Ethereum)
+- Relationships link certificates to users and signatures
 """
 
 from sqlalchemy import Column, Integer, String, Float, Text, Boolean, ForeignKey, DateTime
@@ -204,126 +207,61 @@ class CertificateDB(Base):
     
     # Relationships
     issuer_user = relationship("User", foreign_keys=[issuer_user_id])
-    blockchain_entry = relationship("BlockchainEntry", back_populates="certificate", uselist=False)
     signature = relationship("CertificateSignature", back_populates="certificate", uselist=False)
 
 # ============================================================================
-# Block Model (Blockchain)
+# Certificate Index Model (Lightweight mapping for Ethereum-only mode)
 # ============================================================================
 
-class Block(Base):
+class CertificateIndex(Base):
     """
-    Block model for blockchain storage.
+    Lightweight index for querying certificates by student_id or issuer_id.
     
-    This table stores blockchain blocks. Each block contains:
-    - Block metadata (index, hash, timestamp)
-    - Merkle root hash (for efficient verification)
-    - Link to previous block (chain integrity)
+    This table stores ONLY the mapping between student_id/issuer_id and certificate_id.
+    It does NOT store any PII or certificate data - that's all on Ethereum.
     
-    Blockchain Structure:
-        - Genesis block (index 0) has previous_hash="0"
-        - Each block links to previous block via hash
-        - Merkle root allows verification without processing all entries
+    Purpose:
+        - Enable querying certificates by student_id or issuer_id
+        - Store minimal data (just IDs and course name for display)
+        - All actual certificate data remains on Ethereum blockchain only
     
     Fields:
         id: Primary key
-        index: Block index in chain (0 = genesis block)
-        previous_hash: Hash of previous block (for chain integrity)
-        merkle_root: Root hash of Merkle tree (for certificate verification)
-        hash: This block's hash (calculated from all block data)
-        timestamp: Block creation timestamp
-        created_at: Record creation timestamp
-    
-    Relationships:
-        entries: Blockchain entries (certificate hashes) in this block
+        certificate_id: Unique certificate identifier (indexed)
+        student_id: Student identifier (indexed for fast lookup)
+        issuer_id: Institution identifier (indexed for fast lookup)
+        course_name: Course name (for display purposes only, not PII)
+        timestamp: Unix timestamp of issuance
+        status: Certificate status (active, revoked)
     """
-    __tablename__ = "blocks"
+    __tablename__ = "certificate_index"
     
     # Primary key
     id = Column(Integer, primary_key=True, index=True)
     
-    # Block identification
-    index = Column(Integer, unique=True, index=True, nullable=False)  # Block number in chain
-    
-    # Blockchain linking
-    previous_hash = Column(String(64), nullable=False)  # Hash of previous block
-    
-    # Merkle tree root (for efficient verification)
-    merkle_root = Column(String(64), nullable=True)  # Root hash of Merkle tree
-    
-    # Block hash (calculated from all block data)
-    hash = Column(String(64), unique=True, index=True, nullable=False)
-    
-    # Timestamps
-    timestamp = Column(Float, nullable=False)  # Unix timestamp
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    # Relationships
-    entries = relationship("BlockchainEntry", back_populates="block")
-
-# ============================================================================
-# Blockchain Entry Model (Privacy-Preserving)
-# ============================================================================
-
-class BlockchainEntry(Base):
-    """
-    Blockchain entry - stores only hash of PII, not the actual data.
-    
-    This table stores certificate entries on the blockchain. For privacy compliance,
-    only a hash of PII (student name, student ID, grade) is stored, not the actual
-    data. The full certificate data is stored in CertificateDB (private database).
-    
-    Privacy Feature:
-        - PII hash stored here (on blockchain)
-        - Full PII stored in CertificateDB (private database)
-        - Allows verification without exposing personal information
-        - Hash ensures data integrity
-    
-    Fields:
-        id: Primary key
-        certificate_id: Unique certificate identifier
-        certificate_db_id: Foreign key to CertificateDB (full data)
-        block_id: Foreign key to Block (which block contains this entry)
-        pii_hash: SHA-256 hash of PII data (student_name, student_id, grade)
-        block_index: Block index (denormalized for quick lookup)
-        block_hash: Block hash (denormalized for quick lookup)
-        previous_hash: Previous block hash (denormalized)
-        merkle_root: Merkle tree root for this block
-        timestamp: Entry timestamp
-        created_at: Record creation timestamp
-    
-    Relationships:
-        certificate: Full certificate data (in private database)
-        block: Block containing this entry
-    """
-    __tablename__ = "blockchain_entries"
-    
-    # Primary key
-    id = Column(Integer, primary_key=True, index=True)
-    
-    # Certificate reference
+    # Certificate identification
     certificate_id = Column(String(100), unique=True, index=True, nullable=False)
-    certificate_db_id = Column(Integer, ForeignKey("certificates.id"), nullable=False)
     
-    # Block reference
-    block_id = Column(Integer, ForeignKey("blocks.id"), nullable=True)
+    # Index fields (for querying)
+    student_id = Column(String(100), index=True, nullable=False)
+    issuer_id = Column(String(100), index=True, nullable=False)
     
-    # Privacy-preserving hash (NOT the actual PII data)
-    pii_hash = Column(String(64), nullable=False)  # SHA-256 hash of PII
+    # Minimal display data (not PII)
+    course_name = Column(String(255), nullable=False)
     
-    # Denormalized block information (for quick lookup without joins)
-    block_index = Column(Integer, nullable=False, index=True)
-    block_hash = Column(String(64), nullable=False, index=True)
-    previous_hash = Column(String(64), nullable=False)
-    merkle_root = Column(String(64), nullable=True)  # Merkle tree root for verification
+    # Status and timestamp
+    timestamp = Column(Float, nullable=False)  # Unix timestamp
+    status = Column(String(20), default="active")  # active, revoked
     
     # Timestamps
-    timestamp = Column(Float, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    # Relationships
-    certificate = relationship("CertificateDB", back_populates="blockchain_entry")
-    block = relationship("Block", back_populates="entries")
+
+# ============================================================================
+# Block and BlockchainEntry Models - REMOVED
+# ============================================================================
+# These models were used for custom blockchain implementation.
+# The system now uses Ethereum blockchain only, so these tables are not needed.
+# Certificates are stored directly on Ethereum smart contract.
 
 # ============================================================================
 # Certificate Signature Model

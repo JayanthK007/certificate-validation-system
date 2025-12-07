@@ -19,7 +19,6 @@ def main():
     print("=" * 50)
     
     try:
-        # Run the FastAPI app with uvicorn
         uvicorn.run(
             "app.main:app",
             host="0.0.0.0",

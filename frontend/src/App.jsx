@@ -24,6 +24,8 @@ import VerifyCertificate from './components/VerifyCertificate'
 import StudentPortfolio from './components/StudentPortfolio'
 import BlockchainInfo from './components/BlockchainInfo'
 import RevokeCertificate from './components/RevokeCertificate'
+import EthereumConnect from './components/EthereumConnect'
+import DirectEthereumVerify from './components/DirectEthereumVerify'
 import './index.css'
 
 /**
@@ -65,11 +67,17 @@ const AppContent = () => {
    * Defines all available tabs with their labels and icons.
    * The 'issue' tab is filtered out for non-institution users.
    */
+  // Get Ethereum config from environment or use defaults
+  const ethereumContractAddress = import.meta.env.VITE_ETHEREUM_CONTRACT_ADDRESS || ''
+  const ethereumNetwork = import.meta.env.VITE_ETHEREUM_NETWORK || 'sepolia'
+  const useEthereum = import.meta.env.VITE_USE_ETHEREUM === 'true' || ethereumContractAddress !== ''
+
   const tabs = [
     { id: 'login', label: 'Login/Register', icon: 'fas fa-sign-in-alt' },
     { id: 'issue', label: 'Issue Certificate', icon: 'fas fa-graduation-cap' },
     { id: 'revoke', label: 'Revoke Certificate', icon: 'fas fa-ban' },
     { id: 'verify', label: 'Verify Certificate', icon: 'fas fa-search' },
+    ...(useEthereum ? [{ id: 'ethereum', label: 'Ethereum Direct', icon: 'fab fa-ethereum' }] : []),
     { id: 'student', label: 'Student Portfolio', icon: 'fas fa-user-graduate' },
     { id: 'blockchain', label: 'Blockchain Info', icon: 'fas fa-link' },
   ]
@@ -120,7 +128,7 @@ const AppContent = () => {
                 }
                 // Filter issue and revoke tabs for institutions/admins only
                 if (tab.id === 'issue' || tab.id === 'revoke') {
-                  return isInstitution()  // Only institutions/admins can issue/revoke
+                  return isInstitution()  // Only institutions/admins can issue/revoke/mine
                 }
                 return true  // All other tabs are visible to everyone
               })
@@ -148,6 +156,21 @@ const AppContent = () => {
         {activeTab === 'issue' && <IssueCertificate />}
         {activeTab === 'revoke' && <RevokeCertificate />}
         {activeTab === 'verify' && <VerifyCertificate />}
+        {activeTab === 'ethereum' && useEthereum && (
+          <div>
+            <EthereumConnect 
+              contractAddress={ethereumContractAddress}
+              networkName={ethereumNetwork}
+              onConnected={(address) => {
+                console.log('Ethereum wallet connected:', address)
+              }}
+            />
+            <DirectEthereumVerify 
+              contractAddress={ethereumContractAddress}
+              networkName={ethereumNetwork}
+            />
+          </div>
+        )}
         {activeTab === 'student' && <StudentPortfolio />}
         {activeTab === 'blockchain' && <BlockchainInfo />}
       </main>

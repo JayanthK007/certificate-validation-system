@@ -13,8 +13,9 @@ read-only information about the blockchain state.
 
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
+import os
 from ..database import get_db
-from ..services.blockchain_service import BlockchainService
+from ..services.ethereum_helper import get_ethereum_service
 
 # ============================================================================
 # API Router Setup
@@ -50,11 +51,19 @@ async def get_blockchain_info(db: Session = Depends(get_db)):
         HTTPException: 400 if an error occurs
     """
     try:
-        # Create blockchain service instance
-        blockchain_service = BlockchainService(db)
+        # Get Ethereum network information
+        ethereum_service = get_ethereum_service()
+        network_info = ethereum_service.get_network_info()
         
-        # Get blockchain statistics
-        info = blockchain_service.get_blockchain_info()
+        info = {
+            'blockchain_type': 'ethereum',
+            'network': network_info.get('network'),
+            'chain_id': network_info.get('chain_id'),
+            'block_number': network_info.get('block_number'),
+            'gas_price': network_info.get('gas_price'),
+            'contract_address': network_info.get('contract_address'),
+            'connected': network_info.get('connected', False)
+        }
         
         return {
             "success": True,
@@ -94,19 +103,71 @@ async def validate_blockchain(db: Session = Depends(get_db)):
         HTTPException: 400 if an error occurs during validation
     """
     try:
-        # Create blockchain service instance
-        blockchain_service = BlockchainService(db)
+        # Validate Ethereum connection
+        ethereum_service = get_ethereum_service()
+        network_info = ethereum_service.get_network_info()
         
-        # Validate blockchain integrity (now returns dict with details)
-        validation_result = blockchain_service.validate_chain()
+        if not network_info.get('connected', False):
+            return {
+                "success": True,
+                "valid": False,
+                "message": "Failed to connect to Ethereum network",
+                "block_count": 0,
+                "certificate_count": 0,
+                "blockchain_type": "ethereum",
+                "block_number": 0
+            }
+        
+        block_number = network_info.get('block_number', 0)
+        network_name = network_info.get('network', 'unknown')
+        contract_address = network_info.get('contract_address', 'N/A')
+        
+        # Create a more informative message
+        message = f'✅ Ethereum Network Connected Successfully\n\n'
+        message += f'Network: {network_name.upper()}\n'
+        message += f'Current Block: {block_number}\n'
+        message += f'Contract Address: {contract_address[:20]}...{contract_address[-10:] if len(contract_address) > 30 else contract_address}\n\n'
+        message += f'📋 System Status:\n'
+        message += f'• Certificates are stored on Ethereum blockchain\n'
+        message += f'• All certificate data is immutable and tamper-proof\n'
+        message += f'• To verify a certificate, use the certificate ID in the "Verify Certificate" tab'
         
         return {
             "success": True,
-            "valid": validation_result['valid'],
-            "message": validation_result['message'],
-            "block_count": validation_result.get('block_count', 0),
-            "certificate_count": validation_result.get('certificate_count', 0)
+            "valid": True,
+            "message": message,
+            "block_count": block_number,
+            "certificate_count": 0,  # Cannot enumerate from Ethereum
+            "blockchain_type": "ethereum",
+            "network": network_name,
+            "contract_address": contract_address,
+            "block_number": block_number
         }
+    except ValueError as e:
+        # Handle contract deployment errors with helpful message
+        error_msg = str(e)
+        if 'no code' in error_msg.lower() or 'not deployed' in error_msg.lower():
+            contract_address = os.getenv("CONTRACT_ADDRESS", "N/A")
+            helpful_message = f'❌ Contract Not Deployed\n\n'
+            helpful_message += f'Contract at address {contract_address} has no code.\n\n'
+            helpful_message += f'To fix this:\n'
+            helpful_message += f'1. Make sure Hardhat node is running: cd contracts && npx hardhat node\n'
+            helpful_message += f'2. Deploy the contract: cd contracts && npx hardhat run scripts/deploy.js --network hardhat\n'
+            helpful_message += f'3. Update CONTRACT_ADDRESS in backend/.env with the deployed address\n'
+            helpful_message += f'4. Restart the backend server\n\n'
+            helpful_message += f'Note: Hardhat node resets when restarted, so you need to redeploy the contract.'
+            
+            return {
+                "success": True,
+                "valid": False,
+                "message": helpful_message,
+                "block_count": 0,
+                "certificate_count": 0,
+                "blockchain_type": "ethereum",
+                "block_number": 0
+            }
+        else:
+            raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -138,25 +199,14 @@ async def get_all_blocks(db: Session = Depends(get_db)):
         HTTPException: 400 if an error occurs
     """
     try:
-        # Import Block model
-        from ..models.db_models import Block
-        
-        # Query all blocks ordered by index
-        blocks = db.query(Block).order_by(Block.index).all()
-        
-        # Convert to dictionary format for JSON response
-        blocks_data = [{
-            'index': block.index,
-            'previous_hash': block.previous_hash,
-            'merkle_root': block.merkle_root,
-            'hash': block.hash,
-            'timestamp': block.timestamp
-        } for block in blocks]
+        ethereum_service = get_ethereum_service()
+        network_info = ethereum_service.get_network_info()
         
         return {
             "success": True,
-            "blocks": blocks_data,
-            "count": len(blocks_data)
+            "message": "Ethereum doesn't track individual blocks in this system. Use /blockchain/info for network information.",
+            "network_info": network_info,
+            "note": "Ethereum manages its own blocks. This system only interacts with the smart contract."
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -168,48 +218,29 @@ async def get_all_blocks(db: Session = Depends(get_db)):
 @router.get("/latest-block")
 async def get_latest_block(db: Session = Depends(get_db)):
     """
-    Get the latest block in the blockchain.
+    Get the latest Ethereum block information.
     
-    This endpoint returns information about the most recent block added
-    to the blockchain. Useful for monitoring blockchain growth.
+    This endpoint returns information about the current Ethereum block.
     
     Args:
         db: Database session (injected by FastAPI)
     
     Returns:
-        dict: Latest block information with:
-            - success: Boolean indicating operation success
-            - block: Block dictionary (or None if no blocks exist)
-            - message: Informational message (if no blocks)
+        dict: Latest block information
     
     Raises:
         HTTPException: 400 if an error occurs
     """
     try:
-        # Create blockchain service instance
-        blockchain_service = BlockchainService(db)
+        ethereum_service = get_ethereum_service()
+        network_info = ethereum_service.get_network_info()
         
-        # Get latest block
-        latest_block = blockchain_service.get_latest_block()
-        
-        if latest_block:
-            # Return block information
-            return {
-                "success": True,
-                "block": {
-                    'index': latest_block.index,
-                    'previous_hash': latest_block.previous_hash,
-                    'merkle_root': latest_block.merkle_root,
-                    'hash': latest_block.hash,
-                    'timestamp': latest_block.timestamp
-                }
-            }
-        else:
-            # No blocks exist yet
-            return {
-                "success": True,
-                "block": None,
-                "message": "No blocks in blockchain"
-            }
+        return {
+            "success": True,
+            "block_number": network_info.get('block_number'),
+            "chain_id": network_info.get('chain_id'),
+            "network": network_info.get('network'),
+            "message": "Ethereum manages its own blocks. This shows the current block number."
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

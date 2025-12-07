@@ -5,7 +5,6 @@ This module provides general-purpose cryptographic utilities used throughout
 the application. These are simple helper functions for hashing and ID generation.
 
 Note: This module contains basic utilities. For ECDSA signing, see ecdsa_utils.py
-For Merkle tree hashing, see merkle_tree.py
 """
 
 import hashlib

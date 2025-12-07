@@ -13,46 +13,16 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
-# ============================================================================
-# Database Configuration
-# ============================================================================
-
-# Database URL - SQLite for development, can be changed to PostgreSQL for production
-# Format: "sqlite:///./certificates.db" or "postgresql://user:pass@localhost/dbname"
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./certificates.db")
 
-# ============================================================================
-# SQLAlchemy Engine Setup
-# ============================================================================
-
-# Create database engine - handles connection pooling and database communication
-# For SQLite, we disable thread checking to allow multiple threads
-# For PostgreSQL, no special connection args needed
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
 )
 
-# ============================================================================
-# Session Factory
-# ============================================================================
-
-# Create session factory - used to create database sessions
-# autocommit=False: Changes require explicit commit
-# autoflush=False: Changes are not automatically flushed to DB
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# ============================================================================
-# Base Model Class
-# ============================================================================
-
-# Base class for all SQLAlchemy ORM models
-# All database models inherit from this base class
 Base = declarative_base()
-
-# ============================================================================
-# Database Session Dependency
-# ============================================================================
 
 def get_db():
     """
@@ -65,7 +35,6 @@ def get_db():
     Usage:
         @router.get("/endpoint")
         async def my_endpoint(db: Session = Depends(get_db)):
-            # Use db session here
             pass
     
     Yields:
@@ -80,10 +49,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
-# ============================================================================
-# Database Initialization
-# ============================================================================
 
 def init_db():
     """

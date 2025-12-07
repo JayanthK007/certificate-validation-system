@@ -421,6 +421,14 @@ export const blockchainAPI = {
 }
 
 // ============================================================================
+// Mining API Methods
+// ============================================================================
+
+// Mining API - REMOVED (Ethereum-only system)
+// Mining is handled by Ethereum network, not by this application
+export const miningAPI = {}
+
+// ============================================================================
 // Default Export
 // ============================================================================
 
