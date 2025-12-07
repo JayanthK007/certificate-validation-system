@@ -178,12 +178,9 @@ async def issue_certificate(
             issuer_id=current_user.issuer_id
         )
         
-        # If blockchain addition failed, return error
         if not result['success']:
             raise HTTPException(status_code=500, detail=result.get('error', result.get('message', 'Failed to issue certificate on Ethereum')))
         
-        # Store lightweight index entry (for querying by student_id/issuer_id)
-        # This does NOT store PII - only the mapping and course name
         index_entry = CertificateIndex(
             certificate_id=certificate_id,
             student_id=cert_request.student_id,

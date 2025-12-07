@@ -33,11 +33,9 @@ class EthereumService:
             contract_address: Address of deployed CertificateVerifier contract
             private_key: Private key for signing transactions (optional, for read-only operations)
         """
-        # Get network configuration
         network = os.getenv("ETHEREUM_NETWORK", "sepolia")
         rpc_url = self._get_rpc_url(network)
         
-        # Initialize Web3
         self.web3 = Web3(Web3.HTTPProvider(rpc_url))
         
         if not self.web3.is_connected():
@@ -46,10 +44,8 @@ class EthereumService:
         self.contract_address = Web3.to_checksum_address(contract_address)
         self.network = network
         
-        # Load contract ABI
         self.contract_abi = self._load_contract_abi()
         
-        # Verify contract has code (is deployed)
         try:
             code = self.web3.eth.get_code(self.contract_address)
             if code == b'' or code == '0x' or code == '0x0':
@@ -62,7 +58,6 @@ class EthereumService:
             abi=self.contract_abi
         )
         
-        # Set up account if private key provided
         self.account = None
         if private_key:
             self.account = Account.from_key(private_key)
@@ -81,7 +76,6 @@ class EthereumService:
     
     def _load_contract_abi(self) -> list:
         """Load contract ABI from artifacts."""
-        # Try to load from compiled contract artifacts
         abi_paths = [
             os.path.join(os.path.dirname(__file__), "../../../contracts/artifacts/CertificateVerifier.sol/CertificateVerifier.json"),
             os.path.join(os.path.dirname(__file__), "../artifacts/CertificateVerifier.json"),
@@ -93,8 +87,6 @@ class EthereumService:
                     artifact = json.load(f)
                     return artifact.get("abi", [])
         
-        # Fallback: return minimal ABI if artifact not found
-        # In production, always use compiled ABI
         return [
             {
                 "inputs": [
@@ -166,19 +158,16 @@ class EthereumService:
     
     def bytes32_hash(self, data: str) -> bytes:
         """Convert string to bytes32."""
-        # If it's already a hex string (like SHA-256 hash), convert directly
         if data.startswith('0x'):
             data = data[2:]
         
-        # If it's a hex string, convert to bytes
         if len(data) == 64 and all(c in '0123456789abcdefABCDEF' for c in data):
             return bytes.fromhex(data)
         
-        # Otherwise, hash the string and take first 32 bytes
         if isinstance(data, str):
             data = data.encode('utf-8')
         hash_bytes = Web3.keccak(data)
-        return hash_bytes[:32]  # Return first 32 bytes (bytes32)
+        return hash_bytes[:32]
     
     def issue_certificate(
         self,
@@ -202,11 +191,9 @@ class EthereumService:
         if not self.account:
             raise ValueError("Private key required for issuing certificates")
         
-        # Convert to bytes32
         cert_id_bytes32 = self.bytes32_hash(certificate_id)
         pii_hash_bytes32 = self.bytes32_hash(pii_hash)
         
-        # Build transaction
         function = self.contract.functions.issueCertificate(
             cert_id_bytes32,
             pii_hash_bytes32,
@@ -214,27 +201,21 @@ class EthereumService:
             issuer_id
         )
         
-        # Estimate gas
         gas_estimate = function.estimate_gas({'from': self.sender_address})
         
-        # Build transaction
         transaction = function.build_transaction({
             'from': self.sender_address,
-            'gas': int(gas_estimate * 1.2),  # Add 20% buffer
+            'gas': int(gas_estimate * 1.2),
             'gasPrice': self.web3.eth.gas_price,
             'nonce': self.web3.eth.get_transaction_count(self.sender_address),
         })
         
-        # Sign transaction
         signed_txn = self.web3.eth.account.sign_transaction(transaction, self.account.key)
         
-        # Send transaction
         tx_hash = self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
         
-        # Wait for receipt
         receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
         
-        # Check if transaction succeeded
         if receipt.status != 1:
             return {
                 'success': False,
@@ -268,7 +249,6 @@ class EthereumService:
             dict: Verification result with 'found' field indicating if certificate exists
         """
         try:
-            # First check if certificate exists
             cert_id_bytes32 = self.bytes32_hash(certificate_id)
             exists = self.contract.functions.certificateExists(cert_id_bytes32).call()
             
@@ -283,19 +263,15 @@ class EthereumService:
                     'error': 'Certificate does not exist on Ethereum blockchain.',
                 }
             
-            # Get certificate data from blockchain to retrieve PII hash
             cert_data = self.contract.functions.certificates(cert_id_bytes32).call()
             
-            # Extract PII hash from blockchain (index 1 in the struct)
             pii_hash_bytes32 = cert_data[1] if isinstance(cert_data, (list, tuple)) else cert_data.piiHash
             
-            # Convert bytes32 to hex string
             if isinstance(pii_hash_bytes32, bytes):
                 pii_hash = pii_hash_bytes32.hex()
             else:
                 pii_hash = pii_hash_bytes32.hex() if hasattr(pii_hash_bytes32, 'hex') else str(pii_hash_bytes32)
             
-            # Remove '0x' prefix if present and ensure it's 64 chars
             if pii_hash.startswith('0x'):
                 pii_hash = pii_hash[2:]
             if len(pii_hash) > 64:
@@ -303,11 +279,9 @@ class EthereumService:
             elif len(pii_hash) < 64:
                 pii_hash = pii_hash.zfill(64)
             
-            # Now verify with the retrieved PII hash
             return self.verify_certificate(certificate_id, pii_hash)
         except Exception as e:
             error_msg = str(e)
-            # Check if it's a contract connection error
             if 'contract' in error_msg.lower() or 'deployed' in error_msg.lower() or 'synced' in error_msg.lower() or 'connection' in error_msg.lower():
                 return {
                     'found': False,
@@ -325,7 +299,6 @@ class EthereumService:
                     }
                 }
             else:
-                # Re-raise other exceptions
                 raise
     
     def verify_certificate(
@@ -343,14 +316,10 @@ class EthereumService:
         Returns:
             dict: Verification result with 'found' field indicating if certificate exists
         """
-        # Convert to bytes32
         cert_id_bytes32 = self.bytes32_hash(certificate_id)
         pii_hash_bytes32 = self.bytes32_hash(pii_hash)
         
-        # First check if certificate exists using certificateExists function
-        # This is more reliable than checking the mapping directly
         try:
-            # Use the certificateExists function from the contract
             exists = self.contract.functions.certificateExists(cert_id_bytes32).call()
             
             if not exists:
@@ -368,25 +337,20 @@ class EthereumService:
                     }
                 }
             
-            # Certificate exists! Now get the full certificate data
             cert_data = self.contract.functions.certificates(cert_id_bytes32).call()
             
-            # Extract issuer address (index 2 in the struct)
             issuer = cert_data[2] if isinstance(cert_data, (list, tuple)) else cert_data.issuer
             
-            # Convert issuer to string for response
             if isinstance(issuer, bytes):
                 issuer_str = issuer.hex() if hasattr(issuer, 'hex') else str(issuer)
             else:
                 issuer_str = str(issuer).lower()
             
-            # Normalize issuer address
             if issuer_str.startswith('0x'):
                 issuer_str = issuer_str.lower()
             else:
                 issuer_str = '0x' + issuer_str.lower()
             
-            # Certificate exists! Now verify with PII hash
             result = self.contract.functions.verifyCertificate(
                 cert_id_bytes32,
                 pii_hash_bytes32
@@ -394,20 +358,17 @@ class EthereumService:
             
             valid, issuer_from_verify, timestamp, revoked = result
             
-            # Convert issuer to string for response
             if isinstance(issuer_from_verify, bytes):
                 issuer_str = issuer_from_verify.hex()
             else:
                 issuer_str = str(issuer_from_verify).lower()
             
-            # Normalize issuer address
             if issuer_str.startswith('0x'):
                 issuer_str = issuer_str.lower()
             else:
                 issuer_str = '0x' + issuer_str.lower()
         except Exception as e:
             error_msg = str(e)
-            # Check if it's a contract connection error
             if 'contract' in error_msg.lower() or 'deployed' in error_msg.lower() or 'synced' in error_msg.lower():
                 return {
                     'found': False,
@@ -423,7 +384,6 @@ class EthereumService:
                     }
                 }
             else:
-                # Certificate likely doesn't exist
                 return {
                     'found': False,
                     'valid': False,
@@ -469,19 +429,15 @@ class EthereumService:
         if not self.account:
             raise ValueError("Private key required for revoking certificates")
         
-        # Convert to bytes32
         cert_id_bytes32 = self.bytes32_hash(certificate_id)
         
-        # Build transaction
         function = self.contract.functions.revokeCertificate(
             cert_id_bytes32,
             reason
         )
         
-        # Estimate gas
         gas_estimate = function.estimate_gas({'from': self.sender_address})
         
-        # Build transaction
         transaction = function.build_transaction({
             'from': self.sender_address,
             'gas': int(gas_estimate * 1.2),
@@ -489,13 +445,10 @@ class EthereumService:
             'nonce': self.web3.eth.get_transaction_count(self.sender_address),
         })
         
-        # Sign transaction
         signed_txn = self.web3.eth.account.sign_transaction(transaction, self.account.key)
         
-        # Send transaction
         tx_hash = self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
         
-        # Wait for receipt
         receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
         
         return {
@@ -520,7 +473,6 @@ class EthereumService:
         cert_id_bytes32 = self.bytes32_hash(certificate_id)
         
         try:
-            # First check if certificate exists
             exists = self.contract.functions.certificateExists(cert_id_bytes32).call()
             if not exists:
                 return {

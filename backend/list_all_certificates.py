@@ -5,7 +5,6 @@ import sys
 import os
 sys.stdout.reconfigure(encoding='utf-8')
 
-# Add the backend directory to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
@@ -20,14 +19,12 @@ def list_all_certificates():
     db = SessionLocal()
     
     try:
-        # Initialize database tables if needed
         try:
             from app.database import init_db
             init_db()
         except Exception as e:
             print(f"Note: Database initialization: {e}")
         
-        # Get all certificate index entries
         try:
             index_entries = db.query(CertificateIndex).all()
         except Exception as e:
@@ -48,7 +45,6 @@ def list_all_certificates():
         print(f"Certificate Index: {len(index_entries)} certificate(s) found")
         print(f"{'='*80}\n")
         
-        # Get Ethereum service
         try:
             ethereum_service = get_ethereum_service()
             print("✅ Connected to Ethereum network\n")
@@ -56,7 +52,6 @@ def list_all_certificates():
             print(f"❌ Failed to connect to Ethereum: {e}\n")
             ethereum_service = None
         
-        # Check each certificate
         verified_count = 0
         not_verified_count = 0
         
@@ -71,7 +66,6 @@ def list_all_certificates():
             print(f"Status:         {entry.status}")
             print(f"Issued:         {entry.timestamp} ({entry.created_at})")
             
-            # Check on Ethereum
             if ethereum_service:
                 try:
                     cert_data = ethereum_service.get_certificate(entry.certificate_id)

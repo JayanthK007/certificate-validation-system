@@ -1,4 +1,3 @@
-// Show Hardhat default accounts
 const { ethers } = require("hardhat");
 
 async function main() {
@@ -7,12 +6,10 @@ async function main() {
   console.log("=".repeat(80));
   console.log();
   
-  // Get signers (accounts)
   const signers = await ethers.getSigners();
   
   console.log(`Found ${signers.length} accounts\n`);
   
-  // Show first 5 accounts (most commonly used)
   for (let i = 0; i < Math.min(5, signers.length); i++) {
     const address = await signers[i].getAddress();
     console.log(`Account #${i}:`);

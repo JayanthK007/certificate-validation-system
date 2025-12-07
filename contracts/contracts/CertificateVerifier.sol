@@ -7,10 +7,6 @@ pragma solidity ^0.8.19;
  * @notice Stores certificate hashes (PII hashes) on-chain for tamper-proof verification
  */
 contract CertificateVerifier {
-    // ============================================================================
-    // Events
-    // ============================================================================
-    
     event CertificateIssued(
         bytes32 indexed certificateId,
         bytes32 indexed piiHash,
@@ -27,37 +23,23 @@ contract CertificateVerifier {
         string reason
     );
     
-    // ============================================================================
-    // Structs
-    // ============================================================================
-    
     struct Certificate {
         bytes32 certificateId;
-        bytes32 piiHash;          // Privacy-preserving hash of PII (student name, ID, grade)
-        address issuer;           // Ethereum address of issuing institution
-        uint256 timestamp;        // Block timestamp when issued
-        bool revoked;             // Revocation status
-        string courseName;        // Course name (public info)
-        string issuerId;          // Institution identifier
-        string revocationReason;  // Reason for revocation (if revoked)
+        bytes32 piiHash;
+        address issuer;
+        uint256 timestamp;
+        bool revoked;
+        string courseName;
+        string issuerId;
+        string revocationReason;
     }
     
-    // ============================================================================
-    // State Variables
-    // ============================================================================
-    
-    // Mapping: certificateId => Certificate
     mapping(bytes32 => Certificate) public certificates;
     
-    // Mapping: issuer address => authorized (true/false)
     mapping(address => bool) public authorizedIssuers;
     
-    // Owner of the contract (can authorize issuers)
     address public owner;
     
-    // ============================================================================
-    // Modifiers
-    // ============================================================================
     
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner can perform this action");
@@ -72,18 +54,11 @@ contract CertificateVerifier {
         _;
     }
     
-    // ============================================================================
-    // Constructor
-    // ============================================================================
-    
     constructor() {
         owner = msg.sender;
-        authorizedIssuers[msg.sender] = true; // Owner is authorized by default
+        authorizedIssuers[msg.sender] = true;
     }
     
-    // ============================================================================
-    // Certificate Issuance
-    // ============================================================================
     
     /**
      * @dev Issue a new certificate on the blockchain
@@ -124,9 +99,6 @@ contract CertificateVerifier {
         );
     }
     
-    // ============================================================================
-    // Certificate Verification
-    // ============================================================================
     
     /**
      * @dev Verify a certificate's authenticity
@@ -149,15 +121,12 @@ contract CertificateVerifier {
     {
         Certificate memory cert = certificates[certificateId];
         
-        // Check if certificate exists
         if (cert.certificateId == bytes32(0)) {
             return (false, address(0), 0, false);
         }
         
-        // Check if PII hash matches
         bool hashMatches = (cert.piiHash == piiHash);
         
-        // Certificate is valid if it exists, hash matches, and not revoked
         valid = hashMatches && !cert.revoked;
         issuer = cert.issuer;
         timestamp = cert.timestamp;
@@ -181,9 +150,6 @@ contract CertificateVerifier {
         return certificates[certificateId];
     }
     
-    // ============================================================================
-    // Certificate Revocation
-    // ============================================================================
     
     /**
      * @dev Revoke a certificate
@@ -211,9 +177,6 @@ contract CertificateVerifier {
         emit CertificateRevoked(certificateId, msg.sender, block.timestamp, reason);
     }
     
-    // ============================================================================
-    // Authorization Management
-    // ============================================================================
     
     /**
      * @dev Authorize a new issuer address
@@ -231,9 +194,6 @@ contract CertificateVerifier {
         authorizedIssuers[issuer] = false;
     }
     
-    // ============================================================================
-    // Utility Functions
-    // ============================================================================
     
     /**
      * @dev Check if an address is authorized to issue certificates

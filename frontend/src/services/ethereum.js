@@ -1,15 +1,4 @@
-/**
- * Ethereum Service Layer
- * 
- * Direct interaction with Ethereum smart contracts using ethers.js
- * Provides both direct contract interaction and MetaMask integration
- */
-
 import { ethers } from 'ethers'
-
-// ============================================================================
-// Contract ABI (Application Binary Interface)
-// ============================================================================
 
 const CERTIFICATE_VERIFIER_ABI = [
   "function issueCertificate(bytes32 certificateId, bytes32 piiHash, string memory courseName, string memory issuerId) public",
@@ -22,10 +11,6 @@ const CERTIFICATE_VERIFIER_ABI = [
   "event CertificateIssued(bytes32 indexed certificateId, bytes32 indexed piiHash, address indexed issuer, uint256 timestamp, string courseName, string issuerId)",
   "event CertificateRevoked(bytes32 indexed certificateId, address indexed issuer, uint256 timestamp, string reason)"
 ]
-
-// ============================================================================
-// Network Configuration
-// ============================================================================
 
 const NETWORKS = {
   sepolia: {
@@ -58,10 +43,6 @@ const NETWORKS = {
   }
 }
 
-// ============================================================================
-// Ethereum Service Class
-// ============================================================================
-
 class EthereumService {
   constructor(contractAddress, networkName = 'sepolia') {
     this.contractAddress = contractAddress
@@ -71,10 +52,6 @@ class EthereumService {
     this.contract = null
     this.connected = false
   }
-
-  // ============================================================================
-  // Connection Methods
-  // ============================================================================
 
   /**
    * Check if MetaMask is installed
@@ -92,25 +69,21 @@ class EthereumService {
         throw new Error('MetaMask is not installed. Please install MetaMask extension.')
       }
 
-      // Request account access
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' })
       
       if (accounts.length === 0) {
         throw new Error('No accounts found. Please unlock MetaMask.')
       }
 
-      // Get provider and signer
       this.provider = new ethers.BrowserProvider(window.ethereum)
       this.signer = await this.provider.getSigner()
       
-      // Get contract instance
       this.contract = new ethers.Contract(
         this.contractAddress,
         CERTIFICATE_VERIFIER_ABI,
         this.signer
       )
 
-      // Check network
       await this.ensureCorrectNetwork()
 
       this.connected = true
@@ -134,7 +107,6 @@ class EthereumService {
    */
   async ensureCorrectNetwork() {
     if (this.networkName === 'hardhat') {
-      // For local Hardhat, just check if it's localhost
       const network = await this.provider.getNetwork()
       if (network.chainId !== 1337n) {
         console.warn('Expected Hardhat network (chainId: 1337), but got:', network.chainId)
@@ -148,13 +120,11 @@ class EthereumService {
     }
 
     try {
-      // Request network switch
       await window.ethereum.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: targetNetwork.chainId }]
       })
     } catch (switchError) {
-      // If network doesn't exist, add it
       if (switchError.code === 4902) {
         try {
           await window.ethereum.request({
@@ -194,15 +164,10 @@ class EthereumService {
     this.connected = false
   }
 
-  // ============================================================================
-  // Read-Only Contract Methods
-  // ============================================================================
-
   /**
    * Create read-only contract instance (no signer needed)
    */
   getReadOnlyContract() {
-    // If we already have a provider, use it
     if (this.provider) {
       return new ethers.Contract(
         this.contractAddress,
@@ -211,7 +176,6 @@ class EthereumService {
       )
     }
 
-    // For Hardhat (local network), connect directly to localhost
     if (this.networkName === 'hardhat') {
       const hardhatProvider = new ethers.JsonRpcProvider('http://127.0.0.1:8545')
       return new ethers.Contract(
@@ -221,7 +185,6 @@ class EthereumService {
       )
     }
 
-    // Try to use window.ethereum (MetaMask) as fallback
     if (typeof window.ethereum !== 'undefined') {
       this.provider = new ethers.BrowserProvider(window.ethereum)
       return new ethers.Contract(
@@ -239,13 +202,10 @@ class EthereumService {
    */
   async verifyCertificate(certificateId, piiHash) {
     try {
-      // Use read-only contract (doesn't require wallet connection)
       const contract = this.getReadOnlyContract()
       
-      // Convert strings to bytes32
       const certIdBytes32 = this.stringToBytes32(certificateId)
       
-      // First check if certificate exists
       const exists = await contract.certificateExists(certIdBytes32)
       if (!exists) {
         return {
@@ -254,10 +214,8 @@ class EthereumService {
         }
       }
       
-      // Convert PII hash to bytes32
       const piiHashBytes32 = this.hexToBytes32(piiHash)
 
-      // Verify certificate
       const result = await contract.verifyCertificate(certIdBytes32, piiHashBytes32)
       
       return {
@@ -271,7 +229,6 @@ class EthereumService {
       console.error('Verify certificate error:', error)
       const errorMessage = error.message || error.reason || String(error)
       
-      // Check if it's a connection error
       if (errorMessage.includes('network') || 
           errorMessage.includes('connection') ||
           errorMessage.includes('ECONNREFUSED') ||
@@ -294,12 +251,10 @@ class EthereumService {
    */
   async getCertificate(certificateId) {
     try {
-      // Use read-only contract (doesn't require wallet connection)
       const contract = this.getReadOnlyContract()
       
       const certIdBytes32 = this.stringToBytes32(certificateId)
       
-      // First check if certificate exists
       const exists = await contract.certificateExists(certIdBytes32)
       if (!exists) {
         return {
@@ -308,19 +263,14 @@ class EthereumService {
         }
       }
       
-      // Certificate exists, get full data
-      // Use the certificates mapping directly instead of getCertificate function
-      // to avoid the require statement that throws
       const result = await contract.certificates(certIdBytes32)
       
-      // Convert bytes32 piiHash to hex string if needed
       let piiHashHex = result[1]
       if (typeof piiHashHex === 'string' && piiHashHex.startsWith('0x')) {
-        piiHashHex = piiHashHex.slice(2) // Remove 0x prefix
+        piiHashHex = piiHashHex.slice(2)
       } else if (typeof piiHashHex === 'object' && piiHashHex.hex) {
-        piiHashHex = piiHashHex.hex.slice(2) // Remove 0x prefix
+        piiHashHex = piiHashHex.hex.slice(2)
       } else if (typeof piiHashHex === 'object' && piiHashHex.length) {
-        // Handle bytes array
         piiHashHex = ethers.hexlify(piiHashHex).slice(2)
       }
       
@@ -338,7 +288,6 @@ class EthereumService {
     } catch (error) {
       console.error('Get certificate error:', error)
       
-      // Check if it's a connection error
       const errorMessage = error.message || error.reason || String(error)
       if (errorMessage.includes('network') || 
           errorMessage.includes('connection') ||
@@ -350,7 +299,6 @@ class EthereumService {
         }
       }
       
-      // Check if it's a "Certificate does not exist" error
       if (errorMessage.includes('Certificate does not exist') || 
           errorMessage.includes('revert') ||
           errorMessage.includes('execution reverted')) {
@@ -394,10 +342,6 @@ class EthereumService {
     }
   }
 
-  // ============================================================================
-  // Transaction Methods (Requires Wallet Connection)
-  // ============================================================================
-
   /**
    * Issue certificate (requires transaction)
    */
@@ -410,7 +354,6 @@ class EthereumService {
       const certIdBytes32 = this.stringToBytes32(certificateId)
       const piiHashBytes32 = this.hexToBytes32(piiHash)
 
-      // Estimate gas
       const gasEstimate = await this.contract.issueCertificate.estimateGas(
         certIdBytes32,
         piiHashBytes32,
@@ -418,16 +361,14 @@ class EthereumService {
         issuerId
       )
 
-      // Send transaction
       const tx = await this.contract.issueCertificate(
         certIdBytes32,
         piiHashBytes32,
         courseName,
         issuerId,
-        { gasLimit: gasEstimate * 120n / 100n } // Add 20% buffer
+        { gasLimit: gasEstimate * 120n / 100n }
       )
 
-      // Wait for transaction
       const receipt = await tx.wait()
 
       return {
@@ -456,20 +397,17 @@ class EthereumService {
 
       const certIdBytes32 = this.stringToBytes32(certificateId)
 
-      // Estimate gas
       const gasEstimate = await this.contract.revokeCertificate.estimateGas(
         certIdBytes32,
         reason
       )
 
-      // Send transaction
       const tx = await this.contract.revokeCertificate(
         certIdBytes32,
         reason,
-        { gasLimit: gasEstimate * 120n / 100n } // Add 20% buffer
+        { gasLimit: gasEstimate * 120n / 100n }
       )
 
-      // Wait for transaction
       const receipt = await tx.wait()
 
       return {
@@ -486,10 +424,6 @@ class EthereumService {
       }
     }
   }
-
-  // ============================================================================
-  // Event Listeners
-  // ============================================================================
 
   /**
    * Listen for CertificateIssued events
@@ -514,10 +448,6 @@ class EthereumService {
       this.contract.on('CertificateRevoked', callback)
     }
   }
-
-  // ============================================================================
-  // Utility Methods
-  // ============================================================================
 
   /**
    * Convert string to bytes32 (using keccak256 hash)
@@ -576,15 +506,8 @@ class EthereumService {
   }
 }
 
-// ============================================================================
-// Create Singleton Instance
-// ============================================================================
-
 let ethereumServiceInstance = null
 
-/**
- * Get or create Ethereum service instance
- */
 export function getEthereumService(contractAddress, networkName = 'sepolia') {
   if (!ethereumServiceInstance || 
       ethereumServiceInstance.contractAddress !== contractAddress ||
@@ -594,9 +517,7 @@ export function getEthereumService(contractAddress, networkName = 'sepolia') {
   return ethereumServiceInstance
 }
 
-// Export class for direct instantiation
 export { EthereumService }
 
-// Export default
 export default getEthereumService
 
